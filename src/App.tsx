@@ -25,6 +25,9 @@ export default function App() {
   const [engine, setEngine] = useState<StockfishClient | null>(null);
   const [status, setStatus] = useState<string>('');
   const [result, setResult] = useState<string>('');
+  const [liveDepth, setLiveDepth] = useState<number | undefined>(undefined);
+  const [liveNps, setLiveNps] = useState<number | undefined>(undefined);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const sideToMove = useStore((s) => s.sideToMove);
   const setSideToMove = useStore((s) => s.setSideToMove);
 
@@ -48,6 +51,20 @@ export default function App() {
       };
       const preventKingRemovalOrReplacement = (ev: any) => {
         const { piece, target, newPosition, setAction } = ev.detail || {};
+        // Disallow replacing/capturing a piece of the same color
+        try {
+          if (typeof target === 'string' && target !== 'offboard' && piece && el) {
+            const placementBefore = piecePlacementFromBoard(el as any);
+            const beforeObj = fenToObj(placementBefore) as Record<string, string> | false;
+            if (beforeObj && typeof beforeObj === 'object') {
+              const occupant = (beforeObj as Record<string, string>)[target];
+              if (occupant && occupant[0] === (piece as string)[0]) {
+                setAction('snapback');
+                return;
+              }
+            }
+          }
+        } catch {}
         // Block dropping a king offboard
         if (target === 'offboard' && (piece === 'wK' || piece === 'bK')) {
           setAction('snapback');
@@ -129,8 +146,15 @@ export default function App() {
     }
     const fen = `${placement} ${sideToMove} - - 0 1`;
     setStatus('Analyzing...');
+    setIsAnalyzing(true);
+    setLiveDepth(undefined);
+    setLiveNps(undefined);
     try {
-      const w = await findWorstMove(engine, fen, sideToMove, { perMoveMs: 120, maxMoves: 80 });
+      // Use bounded search per user preference: max depth 3, movetime 1000ms
+      const w = await findWorstMove(engine, fen, sideToMove, { depth: 3, perMoveMs: 1000, maxMoves: 80, onInfo: (s) => {
+        if (s.depth !== undefined) setLiveDepth(s.depth);
+        if (s.nps !== undefined) setLiveNps(s.nps);
+      }});
       if (w) {
         setResult(`${w.move} (opponent score: ${w.scoreText})`);
         // Optionally apply the move visually if supported by the element
@@ -141,6 +165,8 @@ export default function App() {
       setStatus('Done');
     } catch (err) {
       setStatus(String(err));
+    } finally {
+      setIsAnalyzing(false);
     }
   }
 
@@ -171,7 +197,16 @@ export default function App() {
             orientation={orientation}
             style={{ width: 'min(90vw, 560px)' }}
           ></chess-board>
-          <p style={{ marginTop: 12 }}><strong>Worst move:</strong> {result}</p>
+          <p style={{ marginTop: 12 }}>
+            <strong>Worst move:</strong>
+            {isAnalyzing ? (
+              <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                {liveDepth !== undefined ? `depth ${liveDepth}` : ''}
+                {liveNps !== undefined ? `${liveDepth !== undefined ? '  ' : ''}knps ${Math.round((liveNps || 0)/1000)}` : ''}
+              </span>
+            ) : null}
+            {result ? <span style={{ marginLeft: 8 }}>{result}</span> : null}
+          </p>
         </div>
         <div style={{ fontSize: 14, color: '#374151' }}>
           <p>Drag pieces from the tray onto the board. Drag off to remove. Kings cannot be added from the tray, removed, captured, or replaced.</p>

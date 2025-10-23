@@ -25,7 +25,7 @@ export async function findWorstMove(
   engine: StockfishClient,
   fen: string,
   side: Side,
-  opts: { perMoveMs: number; maxMoves?: number }
+  opts: { perMoveMs?: number; maxMoves?: number; depth?: number; onInfo?: (s: { depth?: number; nps?: number }) => void }
 ): Promise<{ move: string; scoreText: string } | null> {
   await engine.newGame();
   await engine.setPositionFen(fen);
@@ -37,7 +37,16 @@ export async function findWorstMove(
   for (let i = 0; i < limit; i++) {
     const m = legal[i];
     engine.setPositionFenWithMoves(fen, [m]);
-    const score = await engine.evaluateCurrentPositionMovetime(opts.perMoveMs);
+    let score: { cp?: number; mate?: number } | null = null;
+    try {
+      // Bound search: cap depth to 3 and movetime to 1000ms
+      const depth = Math.min(3, opts.depth ?? 3);
+      const movetime = Math.min(1000, opts.perMoveMs ?? 1000);
+      score = await engine.evaluateCurrentPosition({ depth, movetime }, opts.onInfo);
+    } catch {
+      // If this move times out, skip to keep UI responsive
+      continue;
+    }
     const { value, text } = evalToOpponentScoreText(score, side);
     if (!worst || value > worst.value) {
       worst = { move: m, value, text };

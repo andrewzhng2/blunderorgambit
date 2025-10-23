@@ -11,7 +11,8 @@ async function main() {
   await mkdir(destDir, { recursive: true });
   try {
     const files = await readdir(srcDir);
-    const asm = files.find((f) => /asm.*\.js$/i.test(f));
+    // Prefer the bundled JS worker that wires onmessage/postMessage (non-wasm)
+    const asm = files.find((f) => /-asm-.*\.js$/i.test(f)) || files.find((f) => /stockfish-.*\.js$/i.test(f));
     if (!asm) throw new Error('No asm.js stockfish build found in stockfish/src');
     await copyFile(resolve(srcDir, asm), resolve(destDir, 'stockfish.js'));
     console.log(`Copied ${asm} to public/stockfish.js`);

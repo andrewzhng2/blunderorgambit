@@ -14,7 +14,8 @@ export class StockfishClient {
   private listeners: Set<Listener> = new Set();
 
   constructor() {
-    this.worker = new Worker('/stockfish.js');
+    // Use wrapper worker to normalize messaging for asm.js builds
+    this.worker = new Worker('/stockfish.worker.js');
   }
 
   async start(): Promise<void> {
@@ -60,10 +61,12 @@ export class StockfishClient {
       });
       this.worker.addEventListener('message', handle as any);
       this.post('uci');
-      this.awaitLine(/^uciok/).then(() => {
-        this.post('isready');
-        this.awaitLine(/^readyok/).then(() => resolve());
-      });
+      this.awaitLine(/^uciok/)
+        .then(() => {
+          this.post('isready');
+          return this.awaitLine(/^readyok/);
+        })
+        .then(() => resolve());
     });
   }
 
@@ -84,27 +87,48 @@ export class StockfishClient {
 
   async getLegalMoves(): Promise<string[]> {
     const moves: string[] = [];
-    const done = new Promise<void>((resolve) => {
+    const waitForMoves = () => new Promise<void>((resolve) => {
       const handler: Listener = (line) => {
-        if (line.startsWith('Legal moves:')) {
-          const listed = line.slice('Legal moves:'.length).trim();
+        if (/^Legal (uci\s+)?moves/i.test(line)) {
+          const listed = line.replace(/^Legal (uci\s+)?moves:?\s*/i, '').trim();
           for (const m of listed.split(/\s+/)) if (m) moves.push(m);
+          this.offLine(handler);
+          resolve();
+        } else if (/^Key is/i.test(line)) {
+          // End of 'd' output on some builds; resolve even if no moves parsed yet
           this.offLine(handler);
           resolve();
         }
       };
       this.onLine(handler);
     });
+
+    // Ensure engine ready before asking for debug output
+    this.post('isready');
+    await this.awaitLine(/^readyok/);
     this.post('d');
-    await done;
+    await waitForMoves();
     return moves;
   }
 
-  async evaluateCurrentPositionMovetime(ms: number): Promise<{ cp?: number; mate?: number } & { raw: string } | null> {
+  async evaluateCurrentPosition(
+    options: { movetime?: number; depth?: number },
+    onInfo?: (stats: { depth?: number; nps?: number }) => void
+  ): Promise<{ cp?: number; mate?: number } & { raw: string } | null> {
     let lastInfo: string | null = null;
     const done = new Promise<void>((resolve) => {
       const handler: Listener = (line) => {
-        if (line.startsWith('info')) lastInfo = line;
+        if (line.startsWith('info')) {
+          lastInfo = line;
+          if (onInfo) {
+            const depthMatch = line.match(/\bdepth\s+(\d+)/);
+            const npsMatch = line.match(/\bnps\s+(\d+)/);
+            const stats: { depth?: number; nps?: number } = {};
+            if (depthMatch) stats.depth = Number(depthMatch[1]);
+            if (npsMatch) stats.nps = Number(npsMatch[1]);
+            if (stats.depth !== undefined || stats.nps !== undefined) onInfo(stats);
+          }
+        }
         if (line.startsWith('bestmove')) {
           this.offLine(handler);
           resolve();
@@ -112,10 +136,13 @@ export class StockfishClient {
       };
       this.onLine(handler);
     });
-    this.post(`go movetime ${ms}`);
-    await done;
+    const parts: string[] = ['go', 'nodes', '999999', 'exclusive'];
+    if (options.depth !== undefined) parts.push('depth', String(options.depth));
+    if (options.movetime !== undefined) parts.push('movetime', String(options.movetime));
+    this.post(parts.join(' '));
+    await done; // no safety timeout per user preference
     if (!lastInfo) return null;
-    const m = lastInfo.match(/score (cp (-?\d+)|mate (-?\d+))/);
+    const m = (lastInfo as string).match(/score (cp (-?\d+)|mate (-?\d+))/);
     if (!m) return { raw: lastInfo } as any;
     if (m[2]) return { cp: Number(m[2]), raw: lastInfo };
     return { mate: Number(m[3]), raw: lastInfo };
