@@ -11,10 +11,9 @@ export type Evaluation = {
 function evalToOpponentScoreText(score: { cp?: number; mate?: number } | null, side: Side): { value: number; text: string } {
   if (!score) return { value: 0, text: '0.0' };
   if (typeof score.mate === 'number') {
-    const val = score.mate > 0 ? 10000 : -10000;
-    // After our move, if mate > 0 it's mate in our favor; opponent score is opposite
-    const opp = -val;
-    return { value: opp, text: score.mate > 0 ? 'mate for us' : 'mate for opponent' };
+    const opponentWinning = score.mate > 0;
+    const value = opponentWinning ? 10000 : -10000;
+    return { value, text: opponentWinning ? 'mate for opponent' : 'mate for us' };
   }
   const cp = score.cp ?? 0;
   // After our move, Stockfish's cp is for side to move (opponent). So opponent advantage = cp directly
