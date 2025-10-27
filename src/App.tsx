@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import 'chessboard-element';
+import ChessBoardHost from './components/ChessBoardElement';
 import { fenToObj } from 'chessboard-element';
 import { create } from 'zustand';
 import { clsx } from 'clsx';
@@ -188,7 +188,7 @@ export default function App() {
       </header>
       <main style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 560px) 1fr', gap: 16, padding: 16 }}>
         <div>
-          <chess-board
+          <ChessBoardHost
             ref={boardRef as any}
             id="board"
             draggable-pieces
@@ -196,7 +196,7 @@ export default function App() {
             drop-off-board="trash"
             orientation={orientation}
             style={{ width: 'min(90vw, 560px)' }}
-          ></chess-board>
+          />
           <p style={{ marginTop: 12 }}>
             <strong>Worst move:</strong>
             {isAnalyzing ? (
