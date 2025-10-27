@@ -15,7 +15,8 @@ export class StockfishClient {
 
   constructor() {
     // Use wrapper worker to normalize messaging for asm.js builds
-    this.worker = new Worker('/stockfish.worker.js');
+    const base = (import.meta.env.BASE_URL ?? '/').replace(/\/?$/, '/');
+    this.worker = new Worker(`${base}stockfish.worker.js`);
   }
 
   async start(): Promise<void> {
