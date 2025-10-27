@@ -137,7 +137,7 @@ export class StockfishClient {
       };
       this.onLine(handler);
     });
-    const parts: string[] = ['go', 'nodes', '999999', 'exclusive'];
+    const parts: string[] = ['go', 'nodes', '999999'];
     if (options.depth !== undefined) parts.push('depth', String(options.depth));
     if (options.movetime !== undefined) parts.push('movetime', String(options.movetime));
     this.post(parts.join(' '));
